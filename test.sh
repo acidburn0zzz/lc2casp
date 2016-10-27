@@ -125,7 +125,7 @@ else
         co=(${(s: :)opts[1]})
         fo=(${(s: :)opts[2]})
         go=(${(s: :)opts[3]})
-        if $gringo "$x" "${go[@]}" | $founded "${fo[@]}" | $clingcon 100 "${co[@]}" "$@" | normalize | diff - "$name.sol"; then
+        if $gringo "$x" "${go[@]}" | $founded "${fo[@]}" | $clingcon 100 --mode=clasp "${co[@]}" "$@" | normalize | diff - "$name.sol"; then
             print -n "."
         else
             print -n "F"

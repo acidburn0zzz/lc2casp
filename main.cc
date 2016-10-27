@@ -1,7 +1,7 @@
 #include "translator.hh"
 #include "printer.hh"
-#include "aspifc.hh"
 #include <potassco/convert.h>
+#include <potassco/aspif.h>
 #include <program_opts/application.h>
 #include <program_opts/typed_value.h>
 #include <fstream>
@@ -65,16 +65,14 @@ void LpConvert::run() {
     std::istream& in = iFile.is_open() ? iFile : std::cin;
     std::ostream& os = oFile.is_open() ? oFile : std::cout;
     if (in.peek() == 'a') {
-        ConditionVec conditions;
-        Potassco::TheoryData data;
         if (text_) {
-            Printer writer(os, conditions, data);
-            AspifCInput reader(writer, conditions, data);
+            Printer writer(os);
+            Potassco::AspifInput reader(writer);
             readProgram(in, reader, error);
         }
         else {
-            FoundedOutput writer(os, conditions, data, bound_.first, bound_.second);
-            AspifCInput reader(writer, conditions, data);
+            FoundedOutput writer(os, bound_.first, bound_.second);
+            Potassco::AspifInput reader(writer);
             readProgram(in, reader, error);
         }
     }

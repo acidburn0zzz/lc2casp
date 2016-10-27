@@ -20,6 +20,7 @@
 #include <cstring>
 
 using namespace Potassco;
+using ConditionVec = std::vector<std::vector<Potassco::Lit_t>>;
 
 namespace {
 
@@ -72,10 +73,8 @@ struct Heuristic {
 
 class Printer::Impl {
 public:
-    Impl(std::ostream& out, ConditionVec &conditions, TheoryData &data)
-    : out_(out)
-    , data_(data)
-    , conditions_(conditions) { }
+    Impl(std::ostream& out)
+    : out_(out) { }
 
     void add(Rule &&rule) {
         rules_.emplace_back(std::move(rule));
@@ -123,6 +122,14 @@ public:
         for (auto &p : project_) { print(p); }
         for (auto &e : external_) { print(e); }
         for (auto &a : acyc_) { print(a); }
+    }
+    Potassco::TheoryData &data() { return data_; }
+    Potassco::Id_t addCondition(const Potassco::LitSpan& cond) {
+        if (cond.size > 0) {
+            conditions_.emplace_back(cond.first, cond.first + cond.size);
+            return conditions_.size();
+        }
+        return 0;
     }
 private:
     void print(Rule const &r) {
@@ -294,7 +301,8 @@ private:
             }
             case Theory_t::Symbol: { out_ << term.symbol(); break; }
             case Theory_t::Compound: {
-                auto &parens = Tuple_t::parens(term.isTuple() ? term.tuple() : Tuple_t::Paren);
+                Tuple_t x;
+                auto parens = toString(term.isTuple() ? term.tuple() : Tuple_t::Paren);
                 bool isOp = false;
                 if (term.isFunction()) {
                     auto &name = data_.getTerm(term.function());
@@ -302,13 +310,13 @@ private:
                     isOp = term.size() <= 2 && std::strpbrk(buf, "/!<=>+-*\\?&@|:;~^.");
                     if (!isOp) { print(data_.getTerm(term.function())); }
                 }
-                out_ << parens.first;
+                out_ << parens[0];
                 if (isOp && term.size() <= 1) {
                     print(data_.getTerm(term.function()));
                 }
                 Gringo::print_comma(out_, term, isOp ? data_.getTerm(term.function()).symbol() : ",", [this](std::ostream &, Id_t termId){ print(data_.getTerm(termId)); });
-                if (term.isTuple() && term.tuple() == TupleType::Paren && term.size() == 1) { out_ << ","; }
-                out_ << parens.second;
+                if (term.isTuple() && term.tuple() == Tuple_t::Paren && term.size() == 1) { out_ << ","; }
+                out_ << parens[1];
                 break;
             }
         }
@@ -316,8 +324,8 @@ private:
 
 private:
     std::ostream& out_;
-    TheoryData &data_;
-    ConditionVec &conditions_;
+    TheoryData data_;
+    ConditionVec conditions_;
     std::vector<Rule> rules_;
     std::vector<Output> output_;
     std::vector<Minimize> minimize_;
@@ -330,8 +338,8 @@ private:
     std::unordered_map<Atom_t, TheoryAtom const*> atoms_;
 };
 
-Printer::Printer(std::ostream& out, ConditionVec &conditions, TheoryData &data)
-: impl_(new Printer::Impl(out, conditions, data)) { }
+Printer::Printer(std::ostream& out)
+: impl_(new Printer::Impl(out)) { }
 
 void Printer::initProgram(bool) {
 }
@@ -339,12 +347,24 @@ void Printer::initProgram(bool) {
 void Printer::beginStep() {
 }
 
-void Printer::rule(const HeadView& head, const BodyView& body) {
+void Printer::rule(Potassco::Head_t ht, const Potassco::AtomSpan& head, const Potassco::LitSpan& body) {
+    std::vector<WeightLit_t> wlits;
+    for (auto &x : body) {
+        wlits.emplace_back(Potassco::WeightLit_t{x, 1});
+    }
     impl_->add({
-        {head.atoms.first, head.atoms.first + head.atoms.size},
-        {body.lits.first, body.lits.first + body.lits.size},
-        head.type, body.type,
-        body.bound});
+        {head.first, head.first + head.size},
+        wlits,
+        ht, Potassco::Body_t::Normal,
+        0});
+}
+
+void Printer::rule(Potassco::Head_t ht, const Potassco::AtomSpan& head, Potassco::Weight_t bound, const Potassco::WeightLitSpan& body) {
+    impl_->add({
+        {head.first, head.first + head.size},
+        {body.first, body.first + body.size},
+        ht, Potassco::Body_t::Sum,
+        bound});
 }
 
 void Printer::minimize(Weight_t prio, const WeightLitSpan& lits) {
@@ -381,6 +401,30 @@ void Printer::heuristic(Atom_t a, Heuristic_t t, int bias, unsigned prio, const 
 
 void Printer::endStep() {
     impl_->print();
+}
+
+void Printer::theoryTerm(Potassco::Id_t termId, int number) {
+    impl_->data().addTerm(termId, number);
+}
+
+void Printer::theoryTerm(Potassco::Id_t termId, const Potassco::StringSpan& name) {
+    impl_->data().addTerm(termId, name);
+}
+
+void Printer::theoryTerm(Potassco::Id_t termId, int cId, const Potassco::IdSpan& args) {
+    impl_->data().addTerm(termId, cId, args);
+}
+
+void Printer::theoryElement(Potassco::Id_t elementId, const Potassco::IdSpan& terms, const Potassco::LitSpan& cond) {
+    impl_->data().addElement(elementId, terms, impl_->addCondition(cond));
+}
+
+void Printer::theoryAtom(Potassco::Id_t atomOrZero, Potassco::Id_t termId, const Potassco::IdSpan& elements) {
+    impl_->data().addAtom(atomOrZero, termId, elements);
+}
+
+void Printer::theoryAtom(Potassco::Id_t atomOrZero, Potassco::Id_t termId, const Potassco::IdSpan& elements, Potassco::Id_t op, Potassco::Id_t rhs) {
+    impl_->data().addAtom(atomOrZero, termId, elements, op, rhs);
 }
 
 Printer::~Printer() noexcept = default;

@@ -1,0 +1,5 @@
+*.swp
+*.pyc
+*.o
+FLAGS
+lc2casp

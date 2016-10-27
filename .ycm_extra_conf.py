@@ -32,7 +32,7 @@ import os
 import os.path
 import ycm_core
 
-clingo_root=os.path.join(os.path.expanduser("~"), "gringo-claspoutput")
+clingo_root=os.path.join(os.path.expanduser("~"), "clingo-5")
 
 # These are the compilation flags that will be used in case there's no
 # compilation database set (by default, one is not set).

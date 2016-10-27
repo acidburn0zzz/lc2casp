@@ -56,25 +56,6 @@ std::ostream &operator<<(std::ostream &out, PrintWrapper<WeightLitSpan> const &p
     return out;
 }
 
-std::ostream &operator<<(std::ostream &out, PrintWrapper<HeadView> const &p) {
-    return out << p.value.type << " " << ::p(p.value.atoms, p.atoms);
-}
-
-std::ostream &operator<<(std::ostream &out, PrintWrapper<BodyView> const &p) {
-    out << p.value.type;
-    if (p.value.type != Body_t::Normal) { out << " " << p.value.bound; }
-    out << " " << p.value.lits.size;
-    for (auto &&x : p.value.lits) {
-        assert(x.lit != 0);
-        out << " " << x.lit;
-        p.atoms = std::max<Atom_t>(p.atoms, std::abs(x.lit) + 1);
-        if (p.value.type == Body_t::Sum) {
-            out << " " << x.weight;
-        }
-    }
-    return out;
-}
-
 class TheoryPrinter {
 public:
     TheoryPrinter(Gringo::Output::TheoryData const &data, std::ostream &out)
@@ -351,17 +332,17 @@ struct FoundedOutput::SimpleDefine : FoundedOutput::Define {
         // c :- v,     &sum { v } >= l, &sum { v } <= r.
         Atom_t l = out.addSum(data, var, ">=", data.addTerm(left));
         Atom_t r = out.addSum(data, var, "<=", data.addTerm(right));
-        WeightLit_t body[3] = {{lit(c), 1}, {-lit(l), 1}, {-lit(r), 1}};
+        Lit_t body[3] = {lit(c), -lit(l), -lit(r)};
         if (!variable.defined) {
-            out.rule({Head_t::Disjunctive, {&variable.atom, 1}}, {Body_t::Normal, 1, {body, 1}});
+            out.rule(Head_t::Disjunctive, {&variable.atom, 1}, {body, 1});
         }
-        out.rule({Head_t::Disjunctive, {nullptr, 0}}, {Body_t::Normal, 1, {body, 2}});
+        out.rule(Head_t::Disjunctive, {nullptr, 0}, {body, 2});
         std::swap(body[1], body[2]);
-        out.rule({Head_t::Disjunctive, {nullptr, 0}}, {Body_t::Normal, 1, {body, 2}});
-        body[0] = {lit(variable.atom), 1};
-        body[1].lit*= -1;
-        body[2].lit*= -1;
-        out.rule({Head_t::Disjunctive, {&c, 1}}, {Body_t::Normal, 1, {!variable.defined ? body : body + 1, size_t(!variable.defined ? 3 : 2)}});
+        out.rule(Head_t::Disjunctive, {nullptr, 0}, {body, 2});
+        body[0] = lit(variable.atom);
+        body[1]*= -1;
+        body[2]*= -1;
+        out.rule(Head_t::Disjunctive, {&c, 1}, {!variable.defined ? body : body + 1, size_t(!variable.defined ? 3 : 2)});
     }
     int left;
     int right;
@@ -375,18 +356,21 @@ struct FoundedOutput::GeneralDefine : FoundedOutput::Define {
     , right(right) { }
     void rule(FoundedOutput &out, std::initializer_list<Atom_t> head, std::initializer_list<Lit_t> body) {
         Atom_t h[head.size()];
-        WeightLit_t b[body.size()];
+        Lit_t b[body.size()];
         int i = 0;
         for (auto &&a : head) { h[i++] = a; }
         i = 0;
-        for (auto &&l : body) { b[i++] = {l, 1}; }
-        out.rule({Head_t::Disjunctive, {h, head.size()}}, {Body_t::Normal, 1, {b, body.size()}});
+        for (auto &&l : body) { b[i++] = l; }
+        out.rule(Head_t::Disjunctive, {h, head.size()}, {b, body.size()});
     }
     void rule(FoundedOutput &out, std::initializer_list<Atom_t> head, std::vector<WeightLit_t> const &body) {
         Atom_t h[head.size()];
+        Lit_t b[body.size()];
         int i = 0;
         for (auto &&a : head) { h[i++] = a; }
-        out.rule({Head_t::Disjunctive, {h, head.size()}}, {Body_t::Normal, 1, toSpan(body)});
+        i = 0;
+        for (auto &&l : body) { b[i++] = l.lit; }
+        out.rule(Head_t::Disjunctive, {h, head.size()}, {b, body.size()});
     }
     void encode(Gringo::Output::TheoryData &data, FoundedOutput &out, Id_t var, Variable &variable, Atom_t c) override {
         // c <=> ~~a & (a => v & d)
@@ -483,10 +467,8 @@ struct FoundedOutput::GeneralDefine : FoundedOutput::Define {
 
 // {{{1 FoundedOutput
 
-FoundedOutput::FoundedOutput(std::ostream& out, ConditionVec &conditions, TheoryData &data, int min, int max)
+FoundedOutput::FoundedOutput(std::ostream& out, int min, int max)
 : out_(out)
-, data_(data)
-, conditions_(conditions)
 , atoms_(0)
 , min_(min)
 , max_(max) { }
@@ -500,11 +482,15 @@ void FoundedOutput::initProgram(bool incremental) {
 void FoundedOutput::beginStep() {
 }
 
-void FoundedOutput::rule(const HeadView& head, const BodyView& body) {
-    if (head.type == Head_t::Disjunctive && head.atoms.size == 1 && body.type == Body_t::Normal && body.lits.size == 0) {
-        facts_.emplace(*head.atoms.first);
+void FoundedOutput::rule(Potassco::Head_t ht, const Potassco::AtomSpan& head, const Potassco::LitSpan& body) {
+    if (ht == Head_t::Disjunctive && head.size == 1 && body.size == 0) {
+        facts_.emplace(*head.first);
     }
-    out_ << Directive_t::Rule << " " << p(head, atoms_) << " " << p(body, atoms_) << "\n";
+    out_ << Directive_t::Rule << " " << ht << " " << p(head, atoms_) << " " << Body_t::Normal << " " << p(body, atoms_) << "\n";
+}
+
+void FoundedOutput::rule(Potassco::Head_t ht, const Potassco::AtomSpan& head, Potassco::Weight_t bound, const Potassco::WeightLitSpan& body) {
+    out_ << Directive_t::Rule << " " << ht << " " << p(head, atoms_) << " " << Body_t::Sum << " " << bound << " " << p(body, atoms_) << "\n";
 }
 
 void FoundedOutput::minimize(Weight_t prio, const WeightLitSpan& lits) {
@@ -536,6 +522,33 @@ void FoundedOutput::acycEdge(int s, int t, const LitSpan& condition) {
 void FoundedOutput::heuristic(Atom_t a, Heuristic_t t, int bias, unsigned prio, const LitSpan& condition) {
     atoms_ = std::max(atoms_, a + 1);
     out_ << Directive_t::Heuristic << " " << t << " " << a << " " << bias << " " << prio << " " << p(condition, atoms_) << "\n";
+}
+
+void FoundedOutput::theoryTerm(Potassco::Id_t termId, int number) {
+    data_.addTerm(termId, number);
+}
+
+void FoundedOutput::theoryTerm(Potassco::Id_t termId, const Potassco::StringSpan& name) {
+    data_.addTerm(termId, name);
+}
+
+void FoundedOutput::theoryTerm(Potassco::Id_t termId, int cId, const Potassco::IdSpan& args) {
+    data_.addTerm(termId, cId, args);
+}
+
+void FoundedOutput::theoryElement(Potassco::Id_t elementId, const Potassco::IdSpan& terms, const Potassco::LitSpan& cond) {
+    if (cond.size > 0) {
+        conditions_.emplace_back(cond.first, cond.first + cond.size);
+    }
+    data_.addElement(elementId, terms, cond.size > 0 ? conditions_.size() : 0);
+}
+
+void FoundedOutput::theoryAtom(Potassco::Id_t atomOrZero, Potassco::Id_t termId, const Potassco::IdSpan& elements) {
+    data_.addAtom(atomOrZero, termId, elements);
+}
+
+void FoundedOutput::theoryAtom(Potassco::Id_t atomOrZero, Potassco::Id_t termId, const Potassco::IdSpan& elements, Potassco::Id_t op, Potassco::Id_t rhs) {
+    data_.addAtom(atomOrZero, termId, elements, op, rhs);
 }
 
 void FoundedOutput::require(bool exp, char const *message) const {
@@ -668,23 +681,23 @@ void FoundedOutput::rewriteConstraint(Gringo::Output::TheoryData &data, TheoryAt
     //   where A is associated with a fresh atom a'
     require(atom.atom() > 0, "theory atoms must be associated with aspif atoms");
     VariableSet vars = collectVariables(atom);
-    std::vector<WeightLit_t> body;
+    std::vector<Lit_t> body;
     body.reserve(vars.size() + 1);
     for (auto &&v : vars) {
         auto it = varMap_.find(v);
         if (it == varMap_.end()) {
             std::vector<Atom_t> head({atom.atom()});
             body.clear();
-            body.push_back({lit(atom.atom()), 1});
-            rule({Head_t::Disjunctive, {nullptr, 0}}, {Body_t::Normal, 1, toSpan(body)});
+            body.push_back(lit(atom.atom()));
+            rule(Head_t::Disjunctive, {nullptr, 0}, toSpan(body));
             return;
         }
-        if (!it->second.defined) { body.push_back({lit(it->second.atom), 1}); }
+        if (!it->second.defined) { body.push_back(lit(it->second.atom)); }
     }
 
-    body.push_back({lit(rewriteAtom(data, atom, true)), 1});
+    body.push_back(lit(rewriteAtom(data, atom, true)));
     std::vector<Atom_t> head({atom.atom()});
-    rule({Head_t::Disjunctive, toSpan(head)}, {Body_t::Normal, static_cast<Weight_t>(body.size()), toSpan(body)});
+    rule(Head_t::Disjunctive, toSpan(head), toSpan(body));
 }
 
 Atom_t FoundedOutput::addSum(Gringo::Output::TheoryData &data, Id_t term, char const *rel, Id_t rhs) {
@@ -808,7 +821,7 @@ void FoundedOutput::printAssign(Gringo::Output::TheoryData &data, Disjunction co
         }
     }
     std::vector<Atom_t> head;
-    WeightLit_t body = {lit(assign.atom), 1};
+    Lit_t body = lit(assign.atom);
     for (auto &&ent : domain) {
         Variable &var = mapVar(ent.first);
         for (auto &&rng : ent.second) {
@@ -818,7 +831,7 @@ void FoundedOutput::printAssign(Gringo::Output::TheoryData &data, Disjunction co
         }
     }
     // c1, ..., cn :- a.
-    rule({Head_t::Disjunctive, toSpan(head)}, {Body_t::Normal, 1, {&body, 1}});
+    rule(Head_t::Disjunctive, toSpan(head), {&body, 1});
 }
 
 void FoundedOutput::rewriteShow(TheoryAtom const &atom) {
@@ -866,7 +879,7 @@ Id_t FoundedOutput::rewriteTerm(Gringo::Output::TheoryData &data, Id_t termId) {
             }
             return term.isFunction()
                 ? data.addTerm(rewriteTerm(data, term.function()), toSpan(terms))
-                : data.addTerm(static_cast<Potassco::TupleType>(term.compound()), toSpan(terms));
+                : data.addTerm(static_cast<Potassco::Tuple_t>(term.compound()), toSpan(terms));
         }
     }
     throw std::logic_error("must not happen");
@@ -1000,8 +1013,8 @@ void FoundedOutput::endStep() {
                 ent.second.extend(0, 0);
             }
             // :- not v, #sum {v} != 0.
-            WeightLit_t body[2] = {{-lit(ent.second.atom), 1}, {lit(addSum(data, ent.first, "!=", data.addTerm(0))), 1}};
-            rule({Head_t::Disjunctive, {nullptr, 0}}, {Body_t::Normal, 1, {body, 2}});
+            Lit_t body[2] = {-lit(ent.second.atom), lit(addSum(data, ent.first, "!=", data.addTerm(0)))};
+            rule(Head_t::Disjunctive, {nullptr, 0}, {body, 2});
         }
     }
     data.addAtom(

@@ -22,26 +22,33 @@
 #include <potassco/theory_data.h>
 #include <gringo/output/theory.hh>
 
-using ConditionVec = std::vector<std::vector<Potassco::Lit_t>>;
-
-class Printer : public Potassco::LpElement {
+class Printer : public Potassco::AbstractProgram {
 public:
     class Impl;
-    Printer(std::ostream& out, ConditionVec &conditions, Potassco::TheoryData &data);
+    Printer(std::ostream& out);
     Printer(const Printer&) = delete;
     Printer& operator=(const Printer&) = delete;
-    virtual void initProgram(bool);
-    virtual void beginStep();
-    virtual void rule(const Potassco::HeadView& head, const Potassco::BodyView& body);
-    virtual void minimize(Potassco::Weight_t prio, const Potassco::WeightLitSpan& lits);
-    virtual void output(const Potassco::StringSpan& str, const Potassco::LitSpan& cond);
-    virtual void assume(const Potassco::LitSpan& lits);
-    virtual void external(Potassco::Atom_t a, Potassco::Value_t v);
-    virtual void project(const Potassco::AtomSpan& atoms);
-    virtual void acycEdge(int s, int t, const Potassco::LitSpan& condition);
-    virtual void heuristic(Potassco::Atom_t a, Potassco::Heuristic_t t, int bias, unsigned prio, const Potassco::LitSpan& condition);
-    virtual void endStep();
-    virtual ~Printer() noexcept;
+    void initProgram(bool) override;
+    void beginStep() override;
+    void rule(Potassco::Head_t ht, const Potassco::AtomSpan& head, const Potassco::LitSpan& body) override;
+    void rule(Potassco::Head_t ht, const Potassco::AtomSpan& head, Potassco::Weight_t bound, const Potassco::WeightLitSpan& body) override;
+    void minimize(Potassco::Weight_t prio, const Potassco::WeightLitSpan& lits) override;
+    void output(const Potassco::StringSpan& str, const Potassco::LitSpan& cond) override;
+    void assume(const Potassco::LitSpan& lits) override;
+    void external(Potassco::Atom_t a, Potassco::Value_t v) override;
+    void project(const Potassco::AtomSpan& atoms) override;
+    void acycEdge(int s, int t, const Potassco::LitSpan& condition) override;
+    void heuristic(Potassco::Atom_t a, Potassco::Heuristic_t t, int bias, unsigned prio, const Potassco::LitSpan& condition) override;
+    void endStep() override;
+
+    void theoryTerm(Potassco::Id_t termId, int number) override;
+    void theoryTerm(Potassco::Id_t termId, const Potassco::StringSpan& name) override;
+    void theoryTerm(Potassco::Id_t termId, int cId, const Potassco::IdSpan& args) override;
+    void theoryElement(Potassco::Id_t elementId, const Potassco::IdSpan& terms, const Potassco::LitSpan& cond) override;
+    void theoryAtom(Potassco::Id_t atomOrZero, Potassco::Id_t termId, const Potassco::IdSpan& elements) override;
+    void theoryAtom(Potassco::Id_t atomOrZero, Potassco::Id_t termId, const Potassco::IdSpan& elements, Potassco::Id_t op, Potassco::Id_t rhs) override;
+
+    ~Printer() noexcept;
 private:
     std::unique_ptr<Impl> impl_;
 };

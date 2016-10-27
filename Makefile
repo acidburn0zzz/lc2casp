@@ -1,7 +1,7 @@
 -include FLAGS
 
-CLINGO_ROOT?=${HOME}/gringo-claspoutput
-CLINGCON_ROOT?=${HOME}/clingcon-3.0
+CLINGO_ROOT?=${HOME}/clingo-5
+CLINGCON_EXE?=clingcon
 CLINGO_BUILD?=debug
 CXXFLAGS?=-W -Wall
 
@@ -14,7 +14,7 @@ OBJECTS=main.o translator.o printer.o
 all: $(TARGET)
 
 test: $(TARGET)
-	./test.sh $(CLINGO_ROOT)/build/$(CLINGO_BUILD)/gringo ./$(TARGET) $(CLINGCON_ROOT)/build/bin/clingcon
+	./test.sh $(CLINGO_ROOT)/build/$(CLINGO_BUILD)/gringo ./$(TARGET) $(CLINGCON_EXE)
 
 %.o: %.cc FLAGS
 	$(CXX) $(_CXXFLAGS) -c -o $@ $<
@@ -34,7 +34,7 @@ main.o: translator.hh printer.hh
 
 FLAGS:
 	echo 'CLINGO_ROOT=$(CLINGO_ROOT)' > FLAGS
-	echo 'CLINGCON_ROOT=$(CLINGCON_ROOT)' >> FLAGS
+	echo 'CLINGCON_EXE=$(CLINGCON_EXE)' >> FLAGS
 	echo 'CLINGO_BUILD=$(CLINGO_BUILD)' >> FLAGS
 	echo 'CXX=$(CXX)' >> FLAGS
 	echo 'CXXFLAGS=$(CXXFLAGS)' >> FLAGS
