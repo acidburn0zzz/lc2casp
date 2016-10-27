@@ -19,4 +19,4 @@ make FLAGS
 and adjust the generated FLAGS file accordingly.
 
 After configuration, the default make target builds the translator.
-There is also a test target to run a small suite of acceptance test.
+There is also a test target to run a small suite of acceptance tests.
